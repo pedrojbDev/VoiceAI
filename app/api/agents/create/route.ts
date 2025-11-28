@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import Retell from 'retell-sdk';
+import Retell from 'retell-sdk'; // Mantemos para criar o agente, mas não o LLM
 import { supabase } from '@/lib/supabase';
 
 const retell = new Retell({
@@ -10,49 +10,53 @@ export async function POST(request: Request) {
   try {
     const { name, prompt } = await request.json();
 
-    console.log("🚀 Criando Agente V5 (Fábrica Automática)...");
+    console.log("🚀 Criando Agente V5 (Modo Raw API)...");
 
-    const promptReforcado = `
-    ${prompt}
-    
-    ### REGRAS CRÍTICAS DE FERRAMENTAS (SISTEMA):
-    1. Você POSSUI uma ferramenta chamada "book_appointment".
-    2. Quando o usuário fornecer Nome e Horário, você É OBRIGADO a usar essa ferramenta.
-    3. NÃO RESPONDA que agendou se você não tiver visto a mensagem de sucesso da ferramenta.
-    4. Se você apenas falar "Agendei" sem usar a ferramenta, você falhou na sua missão.
-    5. Fique mudo ou diga "Um momento..." enquanto a ferramenta roda.
-    `;
-
-    // 1. Configurar o Cérebro (LLM)
-    const llmResponse = await retell.llm.create({
-      model: "gpt-4o",
-      general_prompt: promptReforcado,
-      tools: [
-        {
-          type: "custom",
-          name: "book_appointment",
-          description: "FERRAMENTA OBRIGATÓRIA. Use para salvar o agendamento no banco de dados.",
-          url: "https://voice-ai-drab.vercel.app/api/tools/create-appointment", 
-          speak_during_execution: true,
-          speak_after_execution: false,
-          execution_message_description: "Só um segundo, estou registrando no sistema...",
-          parameters: {
-            type: "object",
-            properties: {
-              customer_name: { type: "string", description: "Nome do paciente identificado na conversa" },
-              appointment_time: { type: "string", description: "Data e hora desejada (ex: Amanhã às 14h)" }
-              // REMOVI O TELEFONE DAQUI PARA NÃO TRAVAR O ROBÔ NA WEB CALL
-            },
-            required: ["customer_name", "appointment_time"]
+    // --- PASSO 1: CRIAR O CÉREBRO (LLM) VIA FETCH DIRETO ---
+    // Usamos fetch para garantir que o campo 'tools' não seja apagado pela SDK antiga
+    const llmResponseRaw = await fetch("https://api.retellai.com/create-retell-llm", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.RETELL_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        general_prompt: prompt,
+        tools: [
+          {
+            type: "custom",
+            name: "book_appointment",
+            description: "Ferramenta para agendar consultas. Use sempre que o usuário confirmar o horário.",
+            url: "https://voice-ai-drab.vercel.app/api/tools/create-appointment", 
+            speak_during_execution: true,
+            execution_message_description: "Só um instante, estou verificando a agenda...",
+            parameters: {
+              type: "object",
+              properties: {
+                customer_name: { type: "string", description: "Nome do paciente" },
+                appointment_time: { type: "string", description: "Data e hora desejada (ex: Amanhã às 14h)" }
+              },
+              required: ["customer_name", "appointment_time"]
+            }
           }
-        }
-      ]
-    } as any);
+        ]
+      })
+    });
 
-    // 2. Criar o Corpo (Agente)
+    if (!llmResponseRaw.ok) {
+      const errorData = await llmResponseRaw.text();
+      throw new Error(`Erro ao criar LLM na Retell: ${errorData}`);
+    }
+
+    const llmResponse = await llmResponseRaw.json();
+    console.log("✅ LLM Criado com Tools. ID:", llmResponse.llm_id);
+
+    // --- PASSO 2: CRIAR O CORPO (AGENTE) ---
+    // Aqui podemos usar a SDK normal, pois agent.create não mudou muito
     const agentResponse = await retell.agent.create({
       agent_name: name,
-      voice_id: "custom_voice_28c8f2fedde9cae4cee5c080a0", // Voz Thais
+      voice_id: "custom_voice_28c8f2fedde9cae4cee5c080a0", // Sua voz Thais
       response_engine: { 
         llm_id: llmResponse.llm_id,
         type: "retell-llm"
@@ -60,10 +64,9 @@ export async function POST(request: Request) {
       language: "pt-BR",
       voice_temperature: 0.8,
       interruption_sensitivity: 0.5, 
-      enable_backchanneling: false,
-    } as any);
+    });
 
-    // 3. Salvar no Banco
+    // --- PASSO 3: SALVAR NO BANCO ---
     await supabase.from('agents').insert([{
         name: name,
         retell_agent_id: agentResponse.agent_id,
@@ -74,7 +77,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, agent_id: agentResponse.agent_id });
 
   } catch (error) {
-    console.error('ERRO:', error);
-    return NextResponse.json({ error: 'Erro ao criar agente' }, { status: 500 });
+    console.error('ERRO FATAL:', error);
+    return NextResponse.json({ error: 'Erro ao criar agente', details: String(error) }, { status: 500 });
   }
 }
