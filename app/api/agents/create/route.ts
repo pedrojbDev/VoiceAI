@@ -10,11 +10,11 @@ export async function POST(request: Request) {
   try {
     const { name, prompt } = await request.json();
 
-    console.log("🚀 Criando Agente V6 (API V2 Raw)...");
+    console.log("🚀 Criando Agente V7 (URL Corrigida)...");
 
-    // --- PASSO 1: CRIAR O CÉREBRO (LLM) USANDO A API V2 ---
-    // A versão V2 garante melhor compatibilidade com as ferramentas
-    const llmResponseRaw = await fetch("https://api.retellai.com/v2/create-retell-llm", {
+    // --- PASSO 1: CRIAR O CÉREBRO (LLM) VIA FETCH DIRETO ---
+    // CORREÇÃO: Removemos o '/v2' da URL pois este endpoint específico não usa
+    const llmResponseRaw = await fetch("https://api.retellai.com/create-retell-llm", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${process.env.RETELL_API_KEY}`,
@@ -46,11 +46,11 @@ export async function POST(request: Request) {
 
     if (!llmResponseRaw.ok) {
       const errorData = await llmResponseRaw.text();
-      throw new Error(`Erro Retell V2: ${errorData}`);
+      throw new Error(`Erro Retell API: ${errorData}`);
     }
 
     const llmResponse = await llmResponseRaw.json();
-    console.log("✅ LLM V2 Criado. ID:", llmResponse.llm_id);
+    console.log("✅ LLM Criado com Tools. ID:", llmResponse.llm_id);
 
     // --- PASSO 2: CRIAR O CORPO (AGENTE) ---
     const agentResponse = await retell.agent.create({
@@ -63,6 +63,7 @@ export async function POST(request: Request) {
       language: "pt-BR",
       voice_temperature: 0.8,
       interruption_sensitivity: 0.5, 
+    
     });
 
     // --- PASSO 3: SALVAR NO BANCO ---
