@@ -10,9 +10,8 @@ export async function POST(request: Request) {
   try {
     const { name, prompt } = await request.json();
 
-    console.log("🚀 Criando Agente V4 (Ferramenta Obrigatória)...");
+    console.log("🚀 Criando Agente V5 (Fábrica Automática)...");
 
-    // PROMPT DE SEGURANÇA: Adicionamos isso automaticamente ao final do seu prompt
     const promptReforcado = `
     ${prompt}
     
@@ -32,8 +31,7 @@ export async function POST(request: Request) {
         {
           type: "custom",
           name: "book_appointment",
-          // Descrição GRITANDO para o robô entender a prioridade
-          description: "FERRAMENTA OBRIGATÓRIA. Use para salvar o agendamento no banco de dados. O agendamento SÓ É REAL se esta função for chamada.",
+          description: "FERRAMENTA OBRIGATÓRIA. Use para salvar o agendamento no banco de dados.",
           url: "https://voice-ai-drab.vercel.app/api/tools/create-appointment", 
           speak_during_execution: true,
           speak_after_execution: false,
@@ -42,8 +40,8 @@ export async function POST(request: Request) {
             type: "object",
             properties: {
               customer_name: { type: "string", description: "Nome do paciente identificado na conversa" },
-              appointment_time: { type: "string", description: "Data e hora desejada (ex: Amanhã às 14h)" },
-              customer_phone: { type: "string", description: "Telefone de contato (opcional)" }
+              appointment_time: { type: "string", description: "Data e hora desejada (ex: Amanhã às 14h)" }
+              // REMOVI O TELEFONE DAQUI PARA NÃO TRAVAR O ROBÔ NA WEB CALL
             },
             required: ["customer_name", "appointment_time"]
           }
