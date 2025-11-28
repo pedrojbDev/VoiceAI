@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import Retell from 'retell-sdk'; // Mantemos para criar o agente, mas não o LLM
+import Retell from 'retell-sdk'; 
 import { supabase } from '@/lib/supabase';
 
 const retell = new Retell({
@@ -10,11 +10,11 @@ export async function POST(request: Request) {
   try {
     const { name, prompt } = await request.json();
 
-    console.log("🚀 Criando Agente V5 (Modo Raw API)...");
+    console.log("🚀 Criando Agente V6 (API V2 Raw)...");
 
-    // --- PASSO 1: CRIAR O CÉREBRO (LLM) VIA FETCH DIRETO ---
-    // Usamos fetch para garantir que o campo 'tools' não seja apagado pela SDK antiga
-    const llmResponseRaw = await fetch("https://api.retellai.com/create-retell-llm", {
+    // --- PASSO 1: CRIAR O CÉREBRO (LLM) USANDO A API V2 ---
+    // A versão V2 garante melhor compatibilidade com as ferramentas
+    const llmResponseRaw = await fetch("https://api.retellai.com/v2/create-retell-llm", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${process.env.RETELL_API_KEY}`,
@@ -46,17 +46,16 @@ export async function POST(request: Request) {
 
     if (!llmResponseRaw.ok) {
       const errorData = await llmResponseRaw.text();
-      throw new Error(`Erro ao criar LLM na Retell: ${errorData}`);
+      throw new Error(`Erro Retell V2: ${errorData}`);
     }
 
     const llmResponse = await llmResponseRaw.json();
-    console.log("✅ LLM Criado com Tools. ID:", llmResponse.llm_id);
+    console.log("✅ LLM V2 Criado. ID:", llmResponse.llm_id);
 
     // --- PASSO 2: CRIAR O CORPO (AGENTE) ---
-    // Aqui podemos usar a SDK normal, pois agent.create não mudou muito
     const agentResponse = await retell.agent.create({
       agent_name: name,
-      voice_id: "custom_voice_28c8f2fedde9cae4cee5c080a0", // Sua voz Thais
+      voice_id: "custom_voice_28c8f2fedde9cae4cee5c080a0", // Voz Thais
       response_engine: { 
         llm_id: llmResponse.llm_id,
         type: "retell-llm"
