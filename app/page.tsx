@@ -18,19 +18,17 @@ interface Stats {
 }
 
 export default function Home() {
-  // --- ESTADOS ---
   const [agents, setAgents] = useState<Agent[]>([]);
   const [stats, setStats] = useState<Stats>({ totalCalls: 0, totalCost: '0.00', totalMinutes: 0 });
   
-  // Formulário
+  // --- FORMULÁRIO ---
   const [nome, setNome] = useState('');
   const [prompt, setPrompt] = useState('');
-  const [customLLM, setCustomLLM] = useState(''); // NOVO: ID Manual do Cérebro
+  const [customLLM, setCustomLLM] = useState(''); // <--- CAMPO DE ID MANUAL
   
   const [loading, setLoading] = useState(false);
   const [activeCallId, setActiveCallId] = useState<string | null>(null);
 
-  // --- EFEITOS ---
   useEffect(() => {
     fetchAgents();
     fetchStats();
@@ -46,8 +44,6 @@ export default function Home() {
       alert("Erro na chamada");
     });
   }, []);
-
-  // --- FUNÇÕES ---
 
   async function fetchAgents() {
     try {
@@ -74,14 +70,13 @@ export default function Home() {
         method: 'POST',
         body: JSON.stringify({ 
           name: nome,
-          prompt: prompt, // Opcional se usar custom_llm_id
-          custom_llm_id: customLLM // <--- Envia o ID manual se preenchido
+          prompt: prompt, 
+          custom_llm_id: customLLM // <--- ENVIA O ID QUE VOCÊ COLOU
         })
       });
       const data = await res.json();
       
       if (data.success) {
-        // Limpa tudo após sucesso
         setNome('');
         setPrompt('');
         setCustomLLM('');
@@ -129,8 +124,6 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-neutral-950 text-white p-8 font-sans">
       <div className="max-w-5xl mx-auto">
-        
-        {/* CABEÇALHO */}
         <header className="mb-8 border-b border-neutral-800 pb-6 flex justify-between items-end">
           <div>
             <h1 className="text-3xl font-bold text-white tracking-tight">Voice AI Dashboard</h1>
@@ -141,7 +134,7 @@ export default function Home() {
           </div>
         </header>
 
-        {/* METRICAS */}
+        {/* MÉTRICAS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
           <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-xl shadow-lg">
             <p className="text-neutral-400 text-sm font-medium mb-1">Total de Chamadas</p>
@@ -152,7 +145,6 @@ export default function Home() {
             <h2 className="text-3xl font-bold text-blue-400">{stats.totalMinutes}m</h2>
           </div>
           <div className="bg-neutral-900 border border-neutral-800 p-6 rounded-xl shadow-lg relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-4 opacity-10 text-6xl">💰</div>
             <p className="text-neutral-400 text-sm font-medium mb-1">Investimento Total</p>
             <h2 className="text-3xl font-bold text-green-400">${stats.totalCost}</h2>
           </div>
@@ -161,8 +153,6 @@ export default function Home() {
         {/* ÁREA DE CRIAÇÃO */}
         <div className="bg-neutral-900/50 border border-neutral-800 p-6 rounded-xl mb-10 flex gap-4 items-end shadow-lg">
           <div className="flex-1 flex flex-col gap-4">
-            
-            {/* Campo Nome */}
             <div>
               <label className="block text-sm font-medium text-neutral-400 mb-2">Nome do Robô</label>
               <input 
@@ -174,42 +164,37 @@ export default function Home() {
               />
             </div>
 
-            {/* ABAS / OPÇÕES DE CRIAÇÃO */}
-            <div className="space-y-4">
+            {/* SEÇÃO DE ESCOLHA (Híbrida) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 
-                {/* Opção 1: Simples (Prompt) */}
-                <div className={`p-4 rounded-lg border ${!customLLM ? 'border-blue-600 bg-blue-900/10' : 'border-neutral-800 bg-neutral-900'} transition-all`}>
-                    <p className="text-xs font-bold uppercase mb-2 text-neutral-400">Opção A: Criação Rápida (Simples)</p>
+                {/* Opção A: Simples */}
+                <div className={`transition-all ${customLLM ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
+                    <label className="block text-sm font-medium text-neutral-400 mb-2">Opção A: Criar Novo Simples (Prompt)</label>
                     <textarea 
                         value={prompt}
                         onChange={(e) => setPrompt(e.target.value)}
-                        disabled={!!customLLM} // Desabilita se estiver usando ID manual
                         placeholder="Escreva aqui como o robô deve se comportar..." 
-                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-600 outline-none placeholder-neutral-600 h-20 text-sm resize-none disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-600 outline-none placeholder-neutral-600 h-24 text-sm resize-none"
                     />
                 </div>
 
-                {/* Opção 2: Avançado (ID Manual) */}
-                <div className={`p-4 rounded-lg border ${customLLM ? 'border-purple-600 bg-purple-900/10' : 'border-neutral-800 bg-neutral-900'} transition-all`}>
-                    <div className="flex justify-between items-center mb-2">
-                        <p className="text-xs font-bold uppercase text-purple-400">Opção B: Conectar Cérebro Pronto (Com Tools)</p>
-                        {customLLM && <span className="text-[10px] bg-purple-600 text-white px-2 py-0.5 rounded">Ativo</span>}
-                    </div>
+                {/* Opção B: Avançado (LLM ID) */}
+                <div className={`transition-all ${prompt ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
+                    <label className="block text-sm font-medium text-purple-400 mb-2">Opção B: Conectar Cérebro Pronto (LLM ID)</label>
                     <input 
                         type="text" 
                         value={customLLM}
                         onChange={(e) => setCustomLLM(e.target.value)}
-                        placeholder="Cole aqui o LLM ID do painel Retell (ex: llm_12345...)" 
-                        className="w-full bg-neutral-950 border border-neutral-700 rounded p-2 text-sm text-white focus:border-purple-500 outline-none font-mono"
+                        placeholder="Cole aqui o LLM ID (llm_...)" 
+                        className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-purple-600 outline-none placeholder-neutral-600 font-mono text-sm h-12"
                     />
                     <p className="text-[10px] text-neutral-500 mt-2">
-                        Use esta opção para conectar agentes complexos com Ferramentas configuradas manualmente no Dashboard da Retell.
+                        Cole o ID de um LLM que você configurou manualmente no Dashboard da Retell (com Tools e Prompts).
                     </p>
                 </div>
 
             </div>
           </div>
-
           <button 
             onClick={criarAgente}
             disabled={loading}
@@ -219,7 +204,7 @@ export default function Home() {
           </button>
         </div>
 
-        {/* LISTAGEM */}
+        {/* LISTAGEM DE AGENTES */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {agents.map((agent) => {
             const isSpeaking = activeCallId === agent.retell_agent_id;
