@@ -1,44 +1,53 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
-// Esta rota será chamada pela Retell AI (pelo robô)
 export async function POST(request: Request) {
   try {
-    // 1. O robô nos manda os dados que extraiu da conversa
     const body = await request.json();
-    const { agent_id, args } = body; 
-    // 'args' são os argumentos que o robô capturou (nome, horário, telefone)
-    
-    console.log("🛠️ Ferramenta Acionada:", args);
+    console.log("🛠️ PAYLOAD RECEBIDO DA RETELL:", JSON.stringify(body, null, 2));
+
+    // A Retell manda os argumentos dentro de 'args'
+    const { args, call_id, agent_id } = body; 
+
+    // BLINDAGEM: Se não vier agent_id, usamos um genérico para não travar o banco
+    const idDoAgente = agent_id || "agente_desconhecido";
+
+    console.log("Tentando agendar para:", args?.customer_name);
+
+    if (!args || !args.customer_name || !args.appointment_time) {
+      return NextResponse.json({ result: "Erro: Faltam dados (Nome ou Horário)." });
+    }
 
     // 2. Salvar no Supabase
     const { data, error } = await supabase
       .from('appointments')
       .insert([
         {
-          agent_id: agent_id,
+          agent_id: idDoAgente,
           customer_name: args.customer_name,
-          customer_phone: args.customer_phone, // O robô tentará extrair ou pedirá
+          customer_phone: args.customer_phone || "Não informado",
           appointment_time: args.appointment_time,
           status: 'confirmed',
-          summary: `Agendado via Voz. Paciente: ${args.customer_name}`
+          summary: `Agendado via Voz (Call ID: ${call_id})`
         }
       ]);
 
     if (error) {
-      console.error("Erro ao agendar:", error);
-      // Retornamos um erro para o robô saber que falhou
+      console.error("❌ Erro Supabase:", error);
       return NextResponse.json({ 
-        result: "Falha ao acessar o sistema de agenda. Peça para tentar mais tarde." 
+        result: "Falha técnica ao salvar no banco de dados." 
       });
     }
 
-    // 3. Resposta para o Robô (O que ele vai "ler" para saber que deu certo)
+    console.log("✅ Agendamento Sucesso!");
+
+    // 3. Resposta Rápida para o Robô
     return NextResponse.json({ 
-      result: `Sucesso. Agendamento confirmado para ${args.customer_name} às ${args.appointment_time}. Diga ao cliente que está tudo certo.` 
+      result: `Sucesso. Agendamento confirmado para ${args.customer_name} às ${args.appointment_time}.` 
     });
 
   } catch (error) {
+    console.error("❌ Erro Crítico:", error);
     return NextResponse.json({ result: "Erro interno no servidor." }, { status: 500 });
   }
 }
