@@ -1,24 +1,35 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase'; // Usa o cliente básico (sem cookies)
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { args, call_id, agent_id } = body; 
-    const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID; // Pega do env
 
-    console.log("🛠️ Agendando para Org:", ORG_ID);
+    console.log(`🛠️ Tool acionada pelo Agente: ${agent_id}`);
 
-    if (!args || !args.customer_name || !args.appointment_time) {
-      return NextResponse.json({ result: "Erro: Faltam dados." });
+    // --- LÓGICA MULTI-TENANT (O Pulo do Gato) ---
+    // 1. Descobrimos de qual empresa é este agente
+    const { data: agentData, error: agentError } = await supabase
+        .from('agents')
+        .select('organization_id')
+        .eq('retell_agent_id', agent_id)
+        .single();
+
+    if (agentError || !agentData) {
+        console.error("❌ Agente não encontrado no banco:", agent_id);
+        return NextResponse.json({ result: "Erro: Agente não identificado no sistema." });
     }
 
-    // Salvar (COM ORG_ID)
+    const ORG_ID = agentData.organization_id;
+    console.log(`✅ Agente pertence à Org: ${ORG_ID}`);
+
+    // 2. Salvamos o agendamento na Org correta
     const { error } = await supabase
       .from('appointments')
       .insert([{
-          organization_id: ORG_ID, // <--- VÍNCULO EMPRESARIAL
-          agent_id: agent_id || "unknown",
+          organization_id: ORG_ID, // <--- ID DINÂMICO DESCOBERTO
+          agent_id: agent_id,
           customer_name: args.customer_name,
           customer_phone: args.customer_phone || "Não informado",
           appointment_time: args.appointment_time,
@@ -28,7 +39,7 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error("❌ Erro Supabase:", error);
-      return NextResponse.json({ result: "Erro técnico no banco." });
+      return NextResponse.json({ result: "Erro técnico ao salvar." });
     }
 
     return NextResponse.json({ 

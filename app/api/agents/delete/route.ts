@@ -1,31 +1,37 @@
 import { NextResponse } from 'next/server';
 import Retell from 'retell-sdk';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/utils/supabase/server'; // <--- Cliente com Auth
 
-const retell = new Retell({
-  apiKey: process.env.RETELL_API_KEY || "",
-});
+const retell = new Retell({ apiKey: process.env.RETELL_API_KEY || "" });
 
 export async function POST(request: Request) {
   try {
+    const supabase = await createClient(); // Await obrigatório
     const { agent_id } = await request.json();
 
-    // 1. Tenta apagar na Retell
-    // Colocamos num try/catch separado, porque se já foi apagado lá (seu caso atual),
-    // a API vai dar erro 404, mas nós QUEREMOS continuar para apagar do banco.
-    try {
-      await retell.agent.delete(agent_id);
-    } catch (retellError) {
-      console.log("Aviso: Agente já não existia na Retell ou erro de API", retellError);
-    }
+    // 1. Segurança: Verifica se o agente pertence à Org do usuário logado
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // 2. Apaga do Supabase (A Limpeza Final)
-    const { error } = await supabase
+    const { data: profile } = await supabase.from('profiles').select('organization_id').eq('id', user.id).single();
+    
+    // Tenta deletar no banco filtrando pela Org (se não for da org, não deleta)
+    const { error, count } = await supabase
       .from('agents')
       .delete()
-      .eq('retell_agent_id', agent_id);
+      .eq('retell_agent_id', agent_id)
+      .eq('organization_id', profile?.organization_id); // <--- TRAVA DE SEGURANÇA
 
-    if (error) throw error;
+    if (error || count === 0) {
+        return NextResponse.json({ error: 'Agente não encontrado ou sem permissão' }, { status: 403 });
+    }
+
+    // 2. Se deletou no banco, deleta na Retell
+    try {
+      await retell.agent.delete(agent_id);
+    } catch (e) {
+      console.log("Aviso: Já deletado na Retell");
+    }
 
     return NextResponse.json({ success: true });
 

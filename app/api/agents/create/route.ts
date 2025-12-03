@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import Retell from 'retell-sdk'; 
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/utils/supabase/server'; // <--- IMPORTAÇÃO CORRETA PARA AUTH
 
 const retell = new Retell({
   apiKey: process.env.RETELL_API_KEY || "",
@@ -8,16 +8,37 @@ const retell = new Retell({
 
 export async function POST(request: Request) {
   try {
+    // 1. Inicializa o Supabase com contexto de segurança (Cookies)
+    const supabase = await createClient(); // <--- O AWAIT QUE FALTAVA
+
+    // 2. Verifica quem está logado
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Usuário não logado' }, { status: 401 });
+    }
+
+    // 3. Busca a Organização desse usuário (Multi-tenant Real)
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', user.id)
+      .single();
+
+    const ORG_ID = profile?.organization_id;
+
+    if (!ORG_ID) {
+      return NextResponse.json({ error: 'Usuário sem organização vinculada' }, { status: 400 });
+    }
+
+    // 4. Recebe os dados do Frontend
     const { name, prompt, custom_llm_id } = await request.json();
-    const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID;
 
-    // Se não tiver ORG_ID, avisamos (para não quebrar o banco enterprise)
-    if (!ORG_ID) console.warn("Aviso: NEXT_PUBLIC_ORG_ID não configurado.");
-
-    console.log(`🚀 Criando Agente: ${name}`);
+    console.log(`🚀 Criando Agente: ${name} na Org: ${ORG_ID}`);
     
     let llmIdFinal = custom_llm_id;
 
+    // --- LÓGICA RETELL (CÉREBRO) ---
+    
     // CENÁRIO A: CRIAÇÃO AUTOMÁTICA (SIMPLES)
     // Se você NÃO colou ID, criamos um cérebro novo básico agora.
     if (!llmIdFinal) {
@@ -33,7 +54,7 @@ export async function POST(request: Request) {
       console.log("🧠 Conectando ao Cérebro Customizado:", llmIdFinal);
     }
 
-    // CRIAR O AGENTE (CORPO)
+    // --- CRIAR O AGENTE (CORPO) ---
     // Conectamos ao cérebro decidido acima (seja novo ou custom)
     const agentResponse = await retell.agent.create({
       agent_name: name,
@@ -47,21 +68,22 @@ export async function POST(request: Request) {
       interruption_sensitivity: 0.5,
     });
 
-    // SALVAR NO BANCO
-    const dbPayload: any = {
+    // --- SALVAR NO BANCO ---
+    // Agora usamos o ORG_ID dinâmico que pegamos do perfil do usuário
+    const { error: dbError } = await supabase.from('agents').insert([{
         name: name,
         retell_agent_id: agentResponse.agent_id,
         voice_id: agentResponse.voice_id,
-        llm_websocket_url: llmIdFinal
-    };
-    if (ORG_ID) dbPayload.organization_id = ORG_ID;
+        llm_websocket_url: llmIdFinal,
+        organization_id: ORG_ID // <--- VÍNCULO CORRETO
+    }]);
 
-    await supabase.from('agents').insert([dbPayload]);
+    if (dbError) throw dbError;
 
     return NextResponse.json({ success: true, agent_id: agentResponse.agent_id });
 
   } catch (error) {
     console.error('ERRO:', error);
-    return NextResponse.json({ error: 'Erro ao criar agente' }, { status: 500 });
+    return NextResponse.json({ error: 'Erro ao criar agente', details: String(error) }, { status: 500 });
   }
 }
