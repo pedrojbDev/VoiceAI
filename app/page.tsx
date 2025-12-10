@@ -27,7 +27,7 @@ export default function Dashboard() {
     <div className="max-w-6xl mx-auto">
       <header className="mb-8 pb-6 border-b border-neutral-800">
         <h1 className="text-3xl font-bold text-white tracking-tight">Visão Geral</h1>
-        <p className="text-neutral-400 mt-1">Métricas de performance da sua operação de voz.</p>
+        <p className="text-neutral-400 mt-1">Métricas de performance da sua operação de voz</p>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
