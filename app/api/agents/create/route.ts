@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     if (!llmIdFinal) {
       console.log("⚡ Nenhum ID fornecido. Criando cérebro básico...");
       const llmResponse = await retell.llm.create({
-        model: "gpt-4o-mini",
+        model: "gpt-4o-mini" as any,
         general_prompt: prompt || "Você é um assistente virtual útil.",
       });
       llmIdFinal = llmResponse.llm_id;
