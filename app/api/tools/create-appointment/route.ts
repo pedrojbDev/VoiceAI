@@ -1,50 +1,55 @@
+import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase-admin'; // <--- USAR O ADMIN
 
-export async function POST(request: Request) {
+// Inicializa Supabase com a Service Role Key (para poder gravar sem login de usuário)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY! 
+);
+
+export async function POST(req: Request) {
   try {
-    const body = await request.json();
-    const { args, call_id, agent_id } = body; 
+    const body = await req.json();
+    
+    // A Retell envia os dados dentro de 'args'
+    // call_id vem no nível raiz do objeto geralmente, mas verificamos ambos
+    const { appointment_time, customer_name } = body.args;
+    const call_id = body.call_id; 
 
-    console.log(`🛠️ Agendamento solicitado pelo Agente: ${agent_id}`);
+    console.log("⚡ Recebendo agendamento da Retell:", { appointment_time, customer_name, call_id });
 
-    // 1. Busca segura com Chave Mestra (Bypassa o RLS)
-    const { data: agentData, error: agentError } = await supabaseAdmin
-        .from('agents')
-        .select('organization_id')
-        .eq('retell_agent_id', agent_id)
-        .single();
-
-    if (agentError || !agentData) {
-        console.error("❌ Agente não encontrado (Erro DB):", agentError);
-        return NextResponse.json({ result: "Erro: Agente não identificado no sistema." });
-    }
-
-    const ORG_ID = agentData.organization_id;
-
-    // 2. Salva o agendamento
-    const { error } = await supabaseAdmin
+    // Inserção no Supabase respeitando EXATAMENTE as colunas do seu print
+    const { data, error } = await supabase
       .from('appointments')
-      .insert([{
-          organization_id: ORG_ID,
-          agent_id: agent_id,
-          customer_name: args.customer_name,
-          customer_phone: args.customer_phone || "Não informado",
-          appointment_time: args.appointment_time,
+      .insert([
+        {
+          customer_name: customer_name,
+          appointment_time: appointment_time, // Coluna correta conforme seu print
+          retell_call_id: call_id,            // A coluna nova que mandei criar
           status: 'confirmed',
-          summary: `Agendado via Voz (Call ID: ${call_id})`
-        }]);
+          // organization_id: ... // Futuramente vamos injetar isso via metadata da chamada
+        }
+      ])
+      .select();
 
     if (error) {
-      console.error("❌ Erro ao salvar agendamento:", error);
-      return NextResponse.json({ result: "Erro técnico ao salvar." });
+      console.error("❌ Erro ao salvar no Supabase:", error);
+      throw error;
     }
 
-    return NextResponse.json({ 
-      result: `Sucesso. Confirmado para ${args.customer_name} às ${args.appointment_time}.` 
+    console.log("✅ Agendamento salvo com ID:", data[0]?.id);
+
+    // Resposta que o Agente vai ler para saber que deu certo
+    return NextResponse.json({
+      result: "success",
+      message: `Agendamento confirmado para ${appointment_time}.`
     });
 
   } catch (error) {
-    return NextResponse.json({ result: "Erro interno." }, { status: 500 });
+    console.error("❌ Erro Crítico na API:", error);
+    return NextResponse.json({
+      result: "error",
+      message: "Falha interna ao acessar a agenda."
+    }, { status: 500 });
   }
 }
