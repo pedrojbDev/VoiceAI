@@ -12,47 +12,48 @@ export async function POST(req: Request) {
     const { event, call } = body;
 
     if (event === 'call_analyzed') {
-      console.log("📞 Processando chamada:", call.call_id);
+      const cleanAgentId = call.agent_id?.trim();
+      console.log(`📞 Webhook: Analisando chamada do agente '${cleanAgentId}'`);
 
-      // 1. BUSCAR A ORGANIZAÇÃO (Lookup)
-      // Precisamos saber de quem é essa chamada baseada no agente que atendeu
-      const { data: agentData } = await supabase
+      // 1. Busca Dinâmica (Lookup)
+      const { data: agentData, error: searchError } = await supabase
         .from('agents')
         .select('organization_id')
-        .eq('retell_agent_id', call.agent_id)
+        .eq('retell_agent_id', cleanAgentId)
         .single();
 
       if (!agentData) {
-        console.error("⚠️ Chamada recebida de agente desconhecido:", call.agent_id);
-        // Opcional: Salvar em log de erro ou ignorar
-        return NextResponse.json({ received: true, status: "agent_not_found" });
+        console.error(`⛔ ERRO FATAL: Agente '${cleanAgentId}' não encontrado no banco.`);
+        // Aqui retornamos 200 para a Retell não ficar tentando reenviar, 
+        // mas logamos o erro para você corrigir o cadastro.
+        return NextResponse.json({ received: true, status: "agent_missing_in_db" });
       }
 
-      // 2. SALVAR NA TABELA CALLS
-      // Mapeando para sua tabela
+      // 2. Persistência
       const { error } = await supabase.from('calls').upsert({
         call_id: call.call_id,
-        agent_id: call.agent_id,
-        organization_id: agentData.organization_id, // <--- A CORREÇÃO CRÍTICA
+        organization_id: agentData.organization_id, // Vínculo real
+        agent_id: cleanAgentId,
         call_status: call.call_status,
         start_timestamp: new Date(call.start_timestamp).toISOString(),
         end_timestamp: new Date(call.end_timestamp).toISOString(),
         duration_seconds: Math.round(call.duration_ms / 1000),
-        cost: call.cost_metadata?.total_cost, // Verifique se a Retell manda assim ou ajuste
+        cost: call.cost_metadata?.total_cost,
         recording_url: call.recording_url,
         transcript: call.transcript,
-        sentiment: call.call_analysis?.user_sentiment, // Mapeando sentimento
+        sentiment: call.call_analysis?.user_sentiment
       }, { onConflict: 'call_id' });
 
       if (error) {
         console.error("❌ Erro ao salvar Call:", error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+      } else {
+        console.log("✅ Call registrada com sucesso para a Org:", agentData.organization_id);
       }
     }
 
     return NextResponse.json({ received: true });
   } catch (err) {
-    console.error("Webhook Fatal Error:", err);
+    console.error("Webhook Error:", err);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
