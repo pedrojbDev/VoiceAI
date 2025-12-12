@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
-// Inicialização com Chave Mestra (Service Role)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -10,75 +9,82 @@ const supabase = createClient(
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    console.log("📦 [Payload Recebido]:", JSON.stringify(body));
+    console.log("🛠️ TOOL CALL RECEBIDA:", JSON.stringify(body));
 
-    // 1. EXTRAÇÃO E LIMPEZA DOS DADOS
-    // Retell pode mandar o agent_id na raiz ou dentro de args, dependendo da versão
-    const rawAgentId = body.agent_id || body.args?.agent_id;
-    const call_id = body.call_id || body.args?.call_id;
-    const { appointment_time, customer_name } = body.args || body;
+    // 1. EXTRAÇÃO DE DADOS (Blindagem contra formatos diferentes)
+    // A Retell manda o agent_id na RAIZ do objeto, não dentro de args.
+    const retell_agent_id = body.agent_id; 
+    const call_id = body.call_id;
+    
+    // Os argumentos do agendamento vêm dentro de 'args'
+    const { appointment_time, customer_name } = body.args || {};
 
-    if (!rawAgentId) {
-      console.error("❌ Erro: Agent ID não fornecido pela Retell.");
-      return NextResponse.json({ result: "error", message: "Agent ID missing" }, { status: 400 });
+    // Validação Básica
+    if (!retell_agent_id) {
+      console.error("❌ ERRO: Retell não enviou o agent_id.");
+      return NextResponse.json({ result: "error", message: "Internal Error: Agent ID missing" });
     }
 
-    // Removemos espaços invisíveis que podem quebrar a busca
-    const cleanAgentId = rawAgentId.trim();
+    if (!appointment_time || !customer_name) {
+      console.error("❌ ERRO: LLM não enviou data ou nome.", body.args);
+      return NextResponse.json({ result: "error", message: "Faltou data ou nome." });
+    }
 
-    console.log(`🔍 Buscando no banco o Agente: '${cleanAgentId}'`);
+    console.log(`🔍 Buscando Organização para o Agente: ${retell_agent_id}`);
 
-    // 2. BUSCA DINÂMICA DA ORGANIZAÇÃO (Onde estava o erro)
-    const { data: agentData, error: searchError } = await supabase
+    // 2. LOOKUP DA ORGANIZAÇÃO (O passo crítico)
+    // Buscamos na tabela 'agents' para saber qual 'organization_id' usar
+    const { data: agentData, error: agentError } = await supabase
       .from('agents')
       .select('organization_id')
-      .eq('retell_agent_id', cleanAgentId)
+      .eq('retell_agent_id', retell_agent_id) // Seu banco usa 'retell_agent_id'
       .single();
 
-    // Diagnóstico detalhado caso falhe
-    if (searchError || !agentData) {
-      console.error("⛔ FALHA DE VÍNCULO:");
-      console.error(`   - Busquei por: '${cleanAgentId}'`);
-      console.error(`   - Erro do Banco:`, searchError?.message);
-      console.error(`   - Resultado:`, agentData);
-      
+    if (agentError || !agentData) {
+      console.error("⛔ ERRO CRÍTICO: Agente não encontrado no banco.", agentError);
+      // Retornamos um erro que o LLM entende
       return NextResponse.json({ 
         result: "error", 
-        message: "Erro interno: Agente não reconhecido no sistema. Verifique o cadastro." 
+        message: "Erro técnico: Agente não cadastrado no sistema interno." 
       });
     }
 
-    console.log(`✅ Agente localizado! Pertence à Org: ${agentData.organization_id}`);
+    const orgId = agentData.organization_id;
+    console.log(`✅ Organização encontrada: ${orgId}`);
 
-    // 3. INSERÇÃO SEGURA (Com Organization ID validado)
-    const { data, error: insertError } = await supabase
+    // 3. INSERÇÃO NO BANCO (Usando nomes exatos do seu print image_e53508.png)
+    const { data, error } = await supabase
       .from('appointments')
       .insert([
         {
-          organization_id: agentData.organization_id, // Vínculo dinâmico correto
-          agent_id: cleanAgentId,
-          customer_name: customer_name,
-          appointment_time: appointment_time,
-          retell_call_id: call_id,
-          status: 'confirmed'
+          organization_id: orgId,      // OBRIGATÓRIO (UUID)
+          agent_id: retell_agent_id,   // Texto
+          customer_name: customer_name,// Texto
+          appointment_time: appointment_time, // Texto
+          retell_call_id: call_id,     // Texto (Adicionado recentemente)
+          status: 'confirmed'          // Texto
         }
       ])
       .select();
 
-    if (insertError) {
-      console.error("❌ Erro ao salvar agendamento:", insertError);
-      throw insertError;
+    if (error) {
+      console.error("❌ Erro ao salvar agendamento:", error);
+      throw error;
     }
 
-    console.log("💾 Agendamento salvo com ID:", data[0]?.id);
+    console.log("💾 Agendamento Salvo com ID:", data[0]?.id);
 
+    // 4. RESPOSTA PARA O ROBÔ
     return NextResponse.json({
       result: "success",
-      message: `Agendamento confirmado para ${appointment_time}.`
+      message: `Agendamento confirmado com sucesso para ${appointment_time}.`
     });
 
   } catch (error) {
-    console.error("🔥 Erro Crítico na API:", error);
-    return NextResponse.json({ result: "error", message: "Falha no servidor." }, { status: 500 });
+    console.error("🔥 Crash na API de Agendamento:", error);
+    return NextResponse.json({ 
+      result: "error", 
+      message: "Falha temporária no sistema de agenda." 
+    }, { status: 500 });
   }
 }
