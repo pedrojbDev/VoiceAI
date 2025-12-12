@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Users, Phone, CalendarCheck, LogOut, Loader2 } from 'lucide-react';
+import { LayoutDashboard, Users, Phone, CalendarCheck, LogOut, Loader2,FileText } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client'; // Certifique-se que este arquivo existe
 import { useState } from 'react';
 
@@ -11,6 +11,7 @@ const menuItems = [
   { name: 'Meus Agentes', icon: Users, path: '/agents' },
   { name: 'Agendamentos', icon: CalendarCheck, path: '/appointments' },
   { name: 'Histórico Calls', icon: Phone, path: '/calls' },
+  { name: 'Inteligência (KB)', icon: FileText, path: '/knowledge-base' },
 ];
 
 export default function Sidebar() {
