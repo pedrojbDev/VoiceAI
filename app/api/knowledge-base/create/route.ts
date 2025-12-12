@@ -16,21 +16,28 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { name, organization_id } = body;
 
-    if (!name || !organization_id) {
-      return NextResponse.json({ error: "Nome e Org ID obrigatórios" }, { status: 400 });
+    console.log(`🧠 Iniciando criação da KB: "${name}" para Org: ${organization_id}`);
+
+    // 1. Verificação de Segurança da SDK
+    if (!retell.knowledgeBase) {
+      console.error("❌ ERRO CRÍTICO: Sua versão do 'retell-sdk' está desatualizada e não tem suporte a Knowledge Base.");
+      console.error("💡 SOLUÇÃO: Rode 'npm install retell-sdk@latest' no terminal.");
+      return NextResponse.json({ 
+        error: "SDK Desatualizada. Atualize o retell-sdk." 
+      }, { status: 500 });
     }
 
-    console.log(`🧠 Criando Knowledge Base: ${name}`);
-
-    // 1. Cria na Retell AI
+    // 2. Criação na Retell AI
+    console.log("📡 Enviando requisição para Retell...");
+    
     const kbResponse = await retell.knowledgeBase.create({
       knowledge_base_name: name,
-      enable_auto_refresh: true // Opcional: mantem atualizado se for URL
+      enable_auto_refresh: true
     });
 
-    console.log("✅ KB criada na Retell:", kbResponse.knowledge_base_id);
+    console.log("✅ Sucesso na Retell! ID:", kbResponse.knowledge_base_id);
 
-    // 2. Salva no Supabase (Vínculo White Label)
+    // 3. Salva no Supabase
     const { data, error } = await supabase
       .from('knowledge_bases')
       .insert([
@@ -43,12 +50,20 @@ export async function POST(req: Request) {
       ])
       .select();
 
-    if (error) throw error;
+    if (error) {
+      console.error("❌ Erro ao salvar no Supabase:", error);
+      throw error;
+    }
 
     return NextResponse.json(data[0]);
 
   } catch (error: any) {
-    console.error("🔥 Erro ao criar KB:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // Log detalhado do erro para sabermos o que aconteceu
+    console.error("🔥 FALHA FATAL NA API:", error);
+    
+    // Retorna o erro para o frontend parar de carregar
+    return NextResponse.json({ 
+      error: error.message || "Erro desconhecido ao criar KB" 
+    }, { status: 500 });
   }
 }
