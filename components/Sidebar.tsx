@@ -1,8 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Users, Phone, CalendarCheck, Settings, LogOut } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { LayoutDashboard, Users, Phone, CalendarCheck, LogOut, Loader2 } from 'lucide-react';
+import { createClient } from '@/utils/supabase/client'; // Certifique-se que este arquivo existe
+import { useState } from 'react';
 
 const menuItems = [
   { name: 'Dashboard', icon: LayoutDashboard, path: '/' },
@@ -13,6 +15,28 @@ const menuItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  // A Lógica de Sair
+  const handleSignOut = async () => {
+    try {
+      setIsLoggingOut(true);
+      const supabase = createClient();
+      
+      // 1. Mata a sessão no Supabase
+      await supabase.auth.signOut();
+      
+      // 2. Força o Next.js a limpar o cache do Router
+      router.refresh();
+      
+      // 3. Manda para o Login
+      router.push('/login');
+    } catch (error) {
+      console.error("Erro ao sair:", error);
+      setIsLoggingOut(false);
+    }
+  };
 
   return (
     <aside className="w-64 bg-neutral-900 border-r border-neutral-800 h-screen flex flex-col fixed left-0 top-0">
@@ -46,11 +70,21 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Rodapé do Menu */}
+      {/* Rodapé do Menu (Agora Funcional) */}
       <div className="p-4 border-t border-neutral-800">
-        <button className="flex items-center gap-3 px-4 py-3 text-neutral-500 hover:text-red-400 w-full transition-colors">
-          <LogOut size={20} />
-          <span>Sair</span>
+        <button 
+          onClick={handleSignOut}
+          disabled={isLoggingOut}
+          className="flex items-center gap-3 px-4 py-3 text-neutral-500 hover:text-red-400 hover:bg-red-950/30 w-full transition-all rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isLoggingOut ? (
+            <Loader2 size={20} className="animate-spin" />
+          ) : (
+            <LogOut size={20} />
+          )}
+          <span className="font-medium">
+            {isLoggingOut ? "Saindo..." : "Sair"}
+          </span>
         </button>
       </div>
     </aside>

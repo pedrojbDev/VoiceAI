@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar"; // Importa nosso menu
 
+
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
