@@ -18,6 +18,9 @@ export default function Sidebar() {
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
+if (pathname === '/login' || pathname === '/auth') {
+    return null;
+}
   // A Lógica de Sair
   const handleSignOut = async () => {
     try {
