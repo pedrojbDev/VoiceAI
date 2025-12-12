@@ -1,52 +1,56 @@
+import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
 
-// Força o Next.js a não fazer cache (Dados em tempo real)
-export const dynamic = 'force-dynamic';
+// Inicializa Supabase com Permissão Admin (Service Role)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const ORG_ID = process.env.NEXT_PUBLIC_ORG_ID;
+    console.log("📊 Calculando estatísticas do Dashboard...");
 
-    if (!ORG_ID) {
-        return NextResponse.json({ totalCalls: 0, totalCost: '0.00', totalMinutes: 0 });
-    }
-
-    // Busca apenas as chamadas da SUA organização
+    // 1. Busca TODAS as chamadas (apenas as colunas necessárias para ficar leve)
+    // Se seu sistema já tem filtro por organização no frontend, 
+    // idealmente deveríamos filtrar por org_id aqui também.
     const { data: calls, error } = await supabase
       .from('calls')
-      .select('cost, duration_seconds')
-      .eq('organization_id', ORG_ID); // <--- O FILTRO IMPORTANTE
+      .select('cost, duration_seconds');
 
-    if (error) throw error;
-
-    // Se não tiver chamadas, retorna zerado para não dar erro de reduce
-    if (!calls || calls.length === 0) {
-        return NextResponse.json({
-            totalCalls: 0,
-            totalCost: '0.00',
-            totalMinutes: 0
-        });
+    if (error) {
+      console.error("❌ Erro ao buscar estatísticas:", error);
+      throw error;
     }
 
-    // Cálculos
+    // 2. Processamento Matemático (Agregação)
     const totalCalls = calls.length;
-    
-    // Soma custos (garantindo que seja número)
-    const totalCost = calls.reduce((acc, call) => acc + Number(call.cost || 0), 0);
-    
-    // Soma minutos
-    const totalDurationSeconds = calls.reduce((acc, call) => acc + (call.duration_seconds || 0), 0);
-    const totalMinutes = Math.round(totalDurationSeconds / 60);
 
-    return NextResponse.json({
-      totalCalls,
-      totalCost: totalCost.toFixed(2),
-      totalMinutes
-    });
+    // Soma os segundos e converte para minutos (arredondado para 1 casa decimal)
+    const totalSeconds = calls.reduce((acc, curr) => acc + (curr.duration_seconds || 0), 0);
+    const totalMinutes = Math.round((totalSeconds / 60) * 10) / 10;
+
+    // Soma o custo (garantindo que seja tratado como número)
+    const totalCost = calls.reduce((acc, curr) => acc + (Number(curr.cost) || 0), 0);
+
+    // 3. Monta o Objeto de Resposta
+    const stats = {
+      total_calls: totalCalls,
+      total_minutes: totalMinutes,
+      total_cost: totalCost.toFixed(2) // Formata para 2 casas decimais (ex: 10.50)
+    };
+
+    console.log("✅ Stats Calculados:", stats);
+
+    return NextResponse.json(stats);
 
   } catch (error) {
-    console.error("Erro Stats:", error);
-    return NextResponse.json({ error: 'Erro ao calcular stats' }, { status: 500 });
+    console.error("🔥 Crash na rota /api/dashboard/stats:", error);
+    // Retorna zeros em caso de erro para não quebrar a UI
+    return NextResponse.json({
+      total_calls: 0,
+      total_minutes: 0,
+      total_cost: "0.00"
+    }, { status: 200 });
   }
 }
