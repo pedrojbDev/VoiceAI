@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { FileText, Plus, Database, Trash2, Loader2 } from "lucide-react";
+import { FileText, Plus, Database, Trash2, Loader2, AlertTriangle } from "lucide-react";
 
 export default function KnowledgeBasePage() {
   const [kbs, setKbs] = useState<any[]>([]);
@@ -23,19 +23,25 @@ export default function KnowledgeBasePage() {
   async function getUserOrg() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
-      // Truque rápido: Pegar a primeira org do usuário (ajuste conforme sua lógica de multi-tenant)
-      // Idealmente, você tem isso no contexto ou metadata do usuário
-      // Vou usar o ID da sua org principal que usamos antes como fallback se não achar
-      const { data } = await supabase.from('organizations').select('id').limit(1).single();
-      if (data) setOrgId(data.id);
+      // Busca a organização vinculada ao usuário
+      const { data, error } = await supabase.from('organizations').select('id').limit(1).single();
+      
+      if (data) {
+        setOrgId(data.id);
+        console.log("✅ OrgID carregado:", data.id);
+      } else {
+        console.error("❌ Nenhuma organização encontrada para este usuário.", error);
+      }
     }
   }
 
   async function fetchKbs() {
     try {
       const res = await fetch('/api/knowledge-base/list');
-      const data = await res.json();
-      setKbs(data);
+      if (res.ok) {
+        const data = await res.json();
+        setKbs(data);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -44,21 +50,40 @@ export default function KnowledgeBasePage() {
   }
 
   async function handleCreate() {
-    if (!newKbName || !orgId) return;
+    // Trava de segurança: Não deixa enviar se não tiver OrgID
+    if (!newKbName || !orgId) {
+        console.warn("⛔ Tentativa de criação bloqueada: OrgID ausente.");
+        alert("Erro: Organização não identificada. Verifique se você criou a 'organization' no Supabase.");
+        return;
+    }
+
     setIsCreating(true);
 
     try {
       const res = await fetch('/api/knowledge-base/create', {
         method: 'POST',
-        body: JSON.stringify({ name: newKbName, organization_id: orgId })
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        // CORREÇÃO CRÍTICA AQUI: O Backend espera 'organizationId' (CamelCase)
+        body: JSON.stringify({ 
+            name: newKbName, 
+            organizationId: orgId 
+        })
       });
       
+      const data = await res.json();
+
       if (res.ok) {
         setNewKbName("");
-        fetchKbs(); // Recarrega a lista
+        // Opcional: Adicionar manualmente à lista para feedback instantâneo sem refetch
+        fetchKbs(); 
+      } else {
+        alert(`Erro ao criar: ${data.details || data.error}`);
       }
     } catch (e) {
-      alert("Erro ao criar");
+      console.error(e);
+      alert("Erro de conexão ao criar base.");
     } finally {
       setIsCreating(false);
     }
@@ -71,6 +96,10 @@ export default function KnowledgeBasePage() {
           <h2 className="text-3xl font-bold tracking-tight">Inteligência (RAG)</h2>
           <p className="text-muted-foreground text-gray-400">
             Crie bases de conhecimento para treinar seus agentes.
+          </p>
+          {/* Debug Visual para você saber se o OrgID carregou */}
+          <p className="text-xs text-gray-600 mt-1 font-mono">
+            {orgId ? `Org Conectada: ${orgId}` : "⚠️ Buscando Organização..."}
           </p>
         </div>
       </div>
@@ -88,8 +117,8 @@ export default function KnowledgeBasePage() {
         </div>
         <button 
           onClick={handleCreate}
-          disabled={isCreating || !newKbName}
-          className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2 disabled:opacity-50 transition-all"
+          disabled={isCreating || !newKbName || !orgId}
+          className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
         >
           {isCreating ? <Loader2 className="animate-spin" /> : <Plus size={20} />}
           Criar Cérebro
@@ -99,7 +128,7 @@ export default function KnowledgeBasePage() {
       {/* Lista de KBs */}
       <div className="grid gap-4 md:grid-cols-3">
         {loading ? (
-          <p className="text-gray-500">Carregando cérebros...</p>
+          <p className="text-gray-500 flex items-center gap-2"><Loader2 className="animate-spin h-4 w-4"/> Carregando cérebros...</p>
         ) : kbs.map((kb) => (
           <div key={kb.id} className="bg-black/40 border border-neutral-800 rounded-xl p-6 hover:border-blue-500/50 transition-colors cursor-pointer group relative">
             <div className="flex items-center justify-between mb-4">
@@ -107,7 +136,7 @@ export default function KnowledgeBasePage() {
                 <Database size={24} />
               </div>
               <span className="text-xs bg-green-900/30 text-green-400 px-2 py-1 rounded border border-green-900">
-                {kb.status}
+                {kb.status || "active"}
               </span>
             </div>
             <h3 className="text-xl font-bold mb-1">{kb.name}</h3>
@@ -122,8 +151,10 @@ export default function KnowledgeBasePage() {
       </div>
       
       {!loading && kbs.length === 0 && (
-        <div className="text-center py-10 text-gray-500">
-          Nenhuma base de conhecimento criada ainda.
+        <div className="text-center py-10 text-gray-500 border border-dashed border-neutral-800 rounded-xl">
+          <Database className="mx-auto h-10 w-10 text-gray-700 mb-3" />
+          <p>Nenhuma base de conhecimento criada ainda.</p>
+          {!orgId && <p className="text-xs text-red-500 mt-2">Atenção: Nenhuma organização detectada. Verifique o Supabase.</p>}
         </div>
       )}
     </div>

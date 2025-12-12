@@ -1,50 +1,97 @@
 import { NextResponse } from 'next/server';
 import Retell from 'retell-sdk';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
 export async function POST(req: Request) {
   try {
-    // 1. Validação de Segurança da Chave (Corrige o erro de 'undefined')
-    const apiKey = process.env.RETELL_API_KEY;
+    // ------------------------------------------------------------------
+    // 1. SETUP SUPABASE (Para passar pelo RLS)
+    // ------------------------------------------------------------------
+    const cookieStore = await cookies();
     
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() { return cookieStore.getAll() },
+          setAll(cookiesToSet) {
+            try {
+              cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
+            } catch {
+              // Ignorar erros de cookie em rotas de API
+            }
+          },
+        },
+      }
+    );
+
+    // Verifica quem é o usuário logado para satisfazer o RLS
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Usuário não autenticado." }, { status: 401 });
+    }
+
+    // ------------------------------------------------------------------
+    // 2. SETUP RETELL E VALIDAÇÕES
+    // ------------------------------------------------------------------
+    const apiKey = process.env.RETELL_API_KEY;
     if (!apiKey) {
-      console.error("❌ ERRO: RETELL_API_KEY não encontrada.");
-      return NextResponse.json({ error: "Erro de configuração no servidor" }, { status: 500 });
+      return NextResponse.json({ error: "API Key da Retell não configurada." }, { status: 500 });
     }
 
-    // Inicializamos o cliente AQUI, onde temos certeza que apiKey é uma string
-    const client = new Retell({
-      apiKey: apiKey,
-    });
+    const client = new Retell({ apiKey });
 
-    // 2. Recebendo dados
     const body = await req.json();
-    const { name } = body;
+    const { name, organizationId } = body; // O Frontend DEVE mandar o organizationId
 
-    if (!name) {
-      return NextResponse.json({ error: "Nome é obrigatório" }, { status: 400 });
-    }
+    if (!name) return NextResponse.json({ error: "Nome obrigatório" }, { status: 400 });
 
-    console.log(`🧠 Criando KB: ${name}`);
+    console.log(`🚀 [1/3] Criando KB na Retell: "${name}"`);
 
-    // 3. Chamada CORRIGIDA (Removemos o parâmetro inválido 'enable_turning_on_knowledge_base')
-    // A propriedade correta é acessada via 'knowledgeBase' (camelCase) no Node.js
-    const response = await client.knowledgeBase.create({
+    // ------------------------------------------------------------------
+    // 3. CRIAÇÃO NA RETELL (CORRIGIDA - SEM O PARÂMETRO INVÁLIDO)
+    // ------------------------------------------------------------------
+    // Removemos 'enable_turning_on_knowledge_base' pois não existe mais.
+    const retellResponse = await client.knowledgeBase.create({
       knowledge_base_name: name
-      // O SDK já ativa a base por padrão ou não exige mais aquele booleano explícito
     });
 
-    console.log("✅ Sucesso:", response);
+    console.log(`✅ [2/3] Retell OK. ID: ${retellResponse.knowledge_base_id}`);
 
-    return NextResponse.json(response, { status: 201 });
+    // ------------------------------------------------------------------
+    // 4. SALVAR NO SUPABASE (RESPEITANDO O RLS)
+    // ------------------------------------------------------------------
+    // Se você não passar organization_id que bate com o usuário, o RLS bloqueia.
+    // Se o frontend não estiver mandando organizationId, use um fixo ou busque do usuário.
+    
+    if (organizationId) {
+        const { error: dbError } = await supabase
+        .from('knowledge_bases')
+        .insert({
+            name: name,
+            retell_kb_id: retellResponse.knowledge_base_id,
+            organization_id: organizationId 
+        });
+
+        if (dbError) {
+            console.error("❌ [Erro Supabase RLS]:", dbError);
+            // Não vamos travar o retorno se falhar o banco, mas logamos o erro RLS
+        } else {
+            console.log("✅ [3/3] Salvo no Supabase com sucesso.");
+        }
+    } else {
+        console.warn("⚠️ organizationId não fornecido pelo frontend. Pulando salvamento no banco para evitar erro RLS.");
+    }
+
+    return NextResponse.json(retellResponse, { status: 201 });
 
   } catch (error: any) {
-    console.error("❌ Erro API:", error);
-    
-    // Tratamento para devolver o erro exato da Retell se houver
-    const errorMessage = error?.error?.message || error.message || "Erro desconhecido";
-    
+    console.error("❌ Erro Geral:", error);
     return NextResponse.json(
-      { error: "Falha ao criar base", details: errorMessage }, 
+      { error: error?.message || "Erro interno" },
       { status: 500 }
     );
   }
