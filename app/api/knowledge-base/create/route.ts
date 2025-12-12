@@ -1,45 +1,43 @@
 import { NextResponse } from 'next/server';
+import Retell from 'retell-sdk';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+
+// 1. FORÇAR RUNTIME NODEJS (Corrige instabilidade no Vercel/Next)
+export const runtime = 'nodejs'; 
 
 export async function POST(req: Request) {
   try {
     const { name, organizationId } = await req.json();
 
-    // 1. Validação Básica
+    // 2. VALIDAÇÃO DE TAMANHO (Evita erro 500 por estouro de campo)
+    // - Documentação pede nomes curtos
     if (!name) return NextResponse.json({ error: "Nome obrigatório" }, { status: 400 });
-    
+    if (name.length > 40) return NextResponse.json({ error: "Nome deve ter no máximo 40 caracteres" }, { status: 400 });
+
     const apiKey = process.env.RETELL_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "API Key ausente" }, { status: 500 });
 
-    // Debug: Verifica se a chave tem espaços invisíveis (erro comum)
-    if (apiKey.trim() !== apiKey) {
-      console.error("⚠️ PERIGO: Sua API Key no .env tem espaços em branco no final ou início!");
-    }
+    // Inicializa SDK
+    const client = new Retell({ apiKey });
 
-    console.log(`🚀 [1/3] Criando KB via Fetch Nativo: "${name}"`);
+    console.log(`🚀 Criando KB Blindada: "${name}"`);
 
-    // 2. CHAMADA DIRETA (Sem usar o SDK da Retell para evitar Timeout)
-    const retellResponse = await fetch('https://api.retellai.com/create-knowledge-base', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey.trim()}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        knowledge_base_name: name
-      })
+    // 3. O PULO DO GATO (FIX DO ERRO 500)
+    // Enviamos um texto de "bootstrap" para o motor de ingestão não processar vazio.
+    const retellResponse = await client.knowledgeBase.create({
+      knowledge_base_name: name,
+      knowledge_base_texts: [
+        {
+          title: "Inicialização",
+          text: "Base de conhecimento criada. Aguardando documentos."
+        }
+      ]
     });
 
-    const retellData = await retellResponse.json();
+    console.log(`✅ Sucesso Retell. ID: ${retellResponse.knowledge_base_id}`);
 
-    if (!retellResponse.ok) {
-      throw new Error(`Erro Retell (${retellResponse.status}): ${JSON.stringify(retellData)}`);
-    }
-
-    console.log(`✅ [2/3] Sucesso Retell. ID: ${retellData.knowledge_base_id}`);
-
-    // 3. SALVAR NO SUPABASE
+    // 4. PERSISTÊNCIA NO SUPABASE
     if (organizationId) {
       const cookieStore = await cookies();
       const supabase = createServerClient(
@@ -61,23 +59,30 @@ export async function POST(req: Request) {
         .from('knowledge_bases')
         .insert({
           name: name,
-          retell_kb_id: retellData.knowledge_base_id,
+          retell_kb_id: retellResponse.knowledge_base_id,
           organization_id: organizationId 
         });
 
       if (dbError) {
-        console.error("❌ [Erro Supabase]:", dbError);
-      } else {
-        console.log("✅ [3/3] Salvo no Banco.");
+        console.error("❌ Erro ao salvar no Supabase (mas criado na Retell):", dbError);
       }
     }
 
-    return NextResponse.json(retellData, { status: 201 });
+    return NextResponse.json(retellResponse, { status: 201 });
 
   } catch (error: any) {
-    console.error("❌ ERRO FATAL:", error);
+    // LOG DETALHADO PARA DEBUG
+    console.error("❌ ERRO API RETELL:", {
+      message: error?.message,
+      status: error?.status,
+      body: error?.body, // Tenta ver o corpo do erro que a Retell devolveu
+    });
+
     return NextResponse.json(
-      { error: error.message || "Timeout ou Erro de Conexão" },
+      { 
+        error: "Falha na criação da base.", 
+        details: error?.body?.message || error.message || "Erro desconhecido" 
+      },
       { status: 500 }
     );
   }
