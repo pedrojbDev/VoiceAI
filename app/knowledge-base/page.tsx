@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { FileText, Plus, Database, Trash2, Loader2, AlertTriangle } from "lucide-react";
+// 1. IMPORTAÇÃO DO MODAL
+import { ManageSourcesModal } from "@/components/ManageSourcesModal";
 
 export default function KnowledgeBasePage() {
   const [kbs, setKbs] = useState<any[]>([]);
@@ -142,10 +144,9 @@ export default function KnowledgeBasePage() {
             <h3 className="text-xl font-bold mb-1">{kb.name}</h3>
             <p className="text-xs text-gray-500 font-mono truncate">ID: {kb.retell_kb_id}</p>
             
-            <div className="mt-4 pt-4 border-t border-neutral-800 flex items-center gap-2 text-sm text-gray-400 group-hover:text-white transition-colors">
-              <FileText size={16} />
-              <span>Gerenciar Fontes (Em breve)</span>
-            </div>
+            {/* 2. COMPONENTE DE GERENCIAMENTO DE FONTES INSERIDO AQUI */}
+            <ManageSourcesModal kbId={kb.retell_kb_id} kbName={kb.name} />
+          
           </div>
         ))}
       </div>
