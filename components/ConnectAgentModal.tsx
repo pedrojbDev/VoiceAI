@@ -13,25 +13,28 @@ export function ConnectAgentModal({ kbId, kbName }: ConnectAgentModalProps) {
   const [loading, setLoading] = useState(false);
   const [agents, setAgents] = useState<any[]>([]);
   const [selectedAgent, setSelectedAgent] = useState("");
+  const [linkStatus, setLinkStatus] = useState<"idle" | "success" | "error">("idle");
 
-  // Busca os agentes ao abrir o modal
+  // Busca os agentes
   useEffect(() => {
-    if (isOpen && agents.length === 0) {
+    if (isOpen) {
       fetchAgents();
+      setLinkStatus("idle");
     }
   }, [isOpen]);
 
   async function fetchAgents() {
     setLoading(true);
     try {
-      // Você precisa ter essa rota de listar agentes. Se não tiver, usa a do Retell direto
+      // Ajuste para chamar sua rota de listagem
       const res = await fetch('/api/agents/list'); 
       const data = await res.json();
-      // O endpoint list geralmente retorna { agents: [...] } ou array direto dependendo da sua implementação
-      setAgents(Array.isArray(data) ? data : data.agents || []);
+      
+      // Tratamento robusto para array ou objeto { agents: [] }
+      const agentList = Array.isArray(data) ? data : (data.agents || []);
+      setAgents(agentList);
     } catch (e) {
       console.error(e);
-      alert("Erro ao buscar agentes");
     } finally {
       setLoading(false);
     }
@@ -40,8 +43,10 @@ export function ConnectAgentModal({ kbId, kbName }: ConnectAgentModalProps) {
   async function handleLink() {
     if (!selectedAgent) return;
     setLoading(true);
+    setLinkStatus("idle");
+    
     try {
-      const res = await fetch('/api/agents/update-kb', { // Sua rota existente
+      const res = await fetch('/api/agents/update-kb', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -51,11 +56,12 @@ export function ConnectAgentModal({ kbId, kbName }: ConnectAgentModalProps) {
       });
 
       if (res.ok) {
-        alert(`✅ Cérebro '${kbName}' conectado ao Agente!`);
-        setIsOpen(false);
+        setLinkStatus("success");
+        setTimeout(() => setIsOpen(false), 2000); // Fecha após 2s
       } else {
         const err = await res.json();
-        alert("Erro: " + err.error);
+        alert("Erro ao vincular: " + (err.error || err.details));
+        setLinkStatus("error");
       }
     } catch (error) {
       alert("Erro de conexão");
@@ -85,13 +91,13 @@ export function ConnectAgentModal({ kbId, kbName }: ConnectAgentModalProps) {
 
             <div className="p-6 space-y-4">
               <p className="text-sm text-gray-400">
-                Selecione qual agente vai usar a inteligência: <strong className="text-white">{kbName}</strong>
+                Qual agente vai usar o cérebro <strong className="text-white">{kbName}</strong>?
               </p>
 
               {loading && agents.length === 0 ? (
                 <div className="flex justify-center py-4"><Loader2 className="animate-spin text-blue-500" /></div>
               ) : (
-                <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
                   {agents.map((agent: any) => (
                     <button
                       key={agent.agent_id}
@@ -102,23 +108,34 @@ export function ConnectAgentModal({ kbId, kbName }: ConnectAgentModalProps) {
                           : 'bg-black border-neutral-800 text-gray-400 hover:border-neutral-600'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <Bot size={18} />
-                        <span className="font-medium truncate">{agent.agent_name || "Agente Sem Nome"}</span>
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <Bot size={18} className="shrink-0" />
+                        <div className="flex flex-col truncate">
+                            {/* Tenta pegar o nome de várias formas, se não, mostra o ID */}
+                            <span className="font-medium truncate">
+                                {agent.agent_name || agent.name || "Agente Sem Nome"}
+                            </span>
+                            <span className="text-[10px] text-gray-600 truncate font-mono">
+                                {agent.agent_id}
+                            </span>
+                        </div>
                       </div>
                       {selectedAgent === agent.agent_id && <Check size={16} className="text-blue-500" />}
                     </button>
                   ))}
-                  {agents.length === 0 && !loading && <p className="text-xs text-gray-500">Nenhum agente encontrado.</p>}
+                  {agents.length === 0 && !loading && <p className="text-xs text-gray-500 text-center py-4">Nenhum agente encontrado.</p>}
                 </div>
               )}
 
               <button 
                 onClick={handleLink}
                 disabled={!selectedAgent || loading}
-                className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white py-3 rounded-lg font-medium transition-all"
+                className={`w-full text-white py-3 rounded-lg font-medium transition-all flex justify-center items-center gap-2
+                    ${linkStatus === 'success' ? 'bg-green-600' : 'bg-blue-600 hover:bg-blue-500 disabled:opacity-50'}
+                `}
               >
-                {loading ? "Vinculando..." : "Confirmar Vínculo"}
+                {loading ? <Loader2 className="animate-spin h-4 w-4" /> : null}
+                {linkStatus === 'success' ? "Vínculo Confirmado!" : "Confirmar Vínculo"}
               </button>
             </div>
           </div>
