@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { FileText, Plus, Database, Trash2, Loader2, AlertTriangle } from "lucide-react";
-// 1. IMPORTAÇÃO DO MODAL
+import { Plus, Database, Loader2 } from "lucide-react";
+// 1. IMPORTAÇÃO DOS MODAIS (Certifique-se que os arquivos existem em /components)
 import { ManageSourcesModal } from "@/components/ManageSourcesModal";
+import { ConnectAgentModal } from "@/components/ConnectAgentModal";
 
 export default function KnowledgeBasePage() {
   const [kbs, setKbs] = useState<any[]>([]);
@@ -67,7 +68,7 @@ export default function KnowledgeBasePage() {
         headers: {
             'Content-Type': 'application/json'
         },
-        // CORREÇÃO CRÍTICA AQUI: O Backend espera 'organizationId' (CamelCase)
+        // O Backend espera 'organizationId' (CamelCase)
         body: JSON.stringify({ 
             name: newKbName, 
             organizationId: orgId 
@@ -78,8 +79,7 @@ export default function KnowledgeBasePage() {
 
       if (res.ok) {
         setNewKbName("");
-        // Opcional: Adicionar manualmente à lista para feedback instantâneo sem refetch
-        fetchKbs(); 
+        fetchKbs(); // Atualiza a lista
       } else {
         alert(`Erro ao criar: ${data.details || data.error}`);
       }
@@ -99,7 +99,6 @@ export default function KnowledgeBasePage() {
           <p className="text-muted-foreground text-gray-400">
             Crie bases de conhecimento para treinar seus agentes.
           </p>
-          {/* Debug Visual para você saber se o OrgID carregou */}
           <p className="text-xs text-gray-600 mt-1 font-mono">
             {orgId ? `Org Conectada: ${orgId}` : "⚠️ Buscando Organização..."}
           </p>
@@ -132,20 +131,30 @@ export default function KnowledgeBasePage() {
         {loading ? (
           <p className="text-gray-500 flex items-center gap-2"><Loader2 className="animate-spin h-4 w-4"/> Carregando cérebros...</p>
         ) : kbs.map((kb) => (
-          <div key={kb.id} className="bg-black/40 border border-neutral-800 rounded-xl p-6 hover:border-blue-500/50 transition-colors cursor-pointer group relative">
-            <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-blue-500/10 rounded-lg text-blue-500">
-                <Database size={24} />
-              </div>
-              <span className="text-xs bg-green-900/30 text-green-400 px-2 py-1 rounded border border-green-900">
-                {kb.status || "active"}
-              </span>
-            </div>
-            <h3 className="text-xl font-bold mb-1">{kb.name}</h3>
-            <p className="text-xs text-gray-500 font-mono truncate">ID: {kb.retell_kb_id}</p>
+          <div key={kb.id} className="bg-black/40 border border-neutral-800 rounded-xl p-6 hover:border-blue-500/50 transition-colors group relative flex flex-col justify-between">
             
-            {/* 2. COMPONENTE DE GERENCIAMENTO DE FONTES INSERIDO AQUI */}
-            <ManageSourcesModal kbId={kb.retell_kb_id} kbName={kb.name} />
+            {/* Cabeçalho do Card */}
+            <div>
+                <div className="flex items-center justify-between mb-4">
+                <div className="p-3 bg-blue-500/10 rounded-lg text-blue-500">
+                    <Database size={24} />
+                </div>
+                <span className="text-xs bg-green-900/30 text-green-400 px-2 py-1 rounded border border-green-900">
+                    {kb.status || "active"}
+                </span>
+                </div>
+                <h3 className="text-xl font-bold mb-1">{kb.name}</h3>
+                <p className="text-xs text-gray-500 font-mono truncate mb-4">ID: {kb.retell_kb_id}</p>
+            </div>
+            
+            {/* Ações do Card */}
+            <div className="space-y-1 pt-4 border-t border-neutral-800">
+                {/* 1. Botão para Adicionar URL/Texto */}
+                <ManageSourcesModal kbId={kb.retell_kb_id} kbName={kb.name} />
+                
+                {/* 2. Botão para Conectar ao Agente */}
+                <ConnectAgentModal kbId={kb.retell_kb_id} kbName={kb.name} />
+            </div>
           
           </div>
         ))}
